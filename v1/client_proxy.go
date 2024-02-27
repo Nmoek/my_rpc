@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"github.com/silenceper/pool"
@@ -10,7 +11,7 @@ import (
 )
 
 type Client struct {
-	connPool pool.Pool
+	connPool pool.Pool // 客户端连接池
 }
 
 func NewClient(network string, addr string) (*Client, error) {
@@ -37,11 +38,6 @@ func NewClient(network string, addr string) (*Client, error) {
 
 func (c *Client) Invoke(ctx context.Context, req *Request) (*Response, error) {
 
-	data, err := json.Marshal(req)
-	if err != nil {
-		return nil, err
-	}
-
 	// 取出连接
 	conObj, err := c.connPool.Get()
 	// 注意区分框架err 和 用户err
@@ -53,6 +49,10 @@ func (c *Client) Invoke(ctx context.Context, req *Request) (*Response, error) {
 	// 协议约定的几种方式：
 	// 1. 长度+数据
 	// 2. 命令字+结构体
+	data, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
 
 	// 网络大端编码
 	data, err = EncodeMsg(data)
@@ -70,7 +70,23 @@ func (c *Client) Invoke(ctx context.Context, req *Request) (*Response, error) {
 	}
 
 	// 读取响应
-	// TODO: 如何知道应该读取多长的响应?
+	// 1.1 先读长度
+	// 1.2 后读数据
+	lengthBytes := make([]byte, lengthByte)
+	_, err = conn.Read(lengthBytes)
+	if err != nil {
+		return nil, err
+	}
 
-	return nil, errors.New("todo client")
+	dataLen := binary.BigEndian.Uint64(lengthBytes)
+
+	respMsg := make([]byte, dataLen)
+	_, err = conn.Read(respMsg)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Response{
+		Data: respMsg,
+	}, nil
 }

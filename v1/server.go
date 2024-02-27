@@ -1,13 +1,27 @@
 package v1
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
+	"reflect"
 )
 
 type Server struct {
+	services map[string]Service
+}
+
+func NewServer() *Server {
+	return &Server{
+		services: map[string]Service{},
+	}
+}
+
+func (s *Server) Register(service Service) {
+	s.services[service.Name()] = service
 }
 
 func (s *Server) Start(network string, addr string) error {
@@ -63,8 +77,51 @@ func (s *Server) handleConn(conn net.Conn) error {
 		fmt.Printf("server req: %v \n", req)
 
 		// 2.业务执行
+		// 2.1 找到本地服务
+		service, ok := s.services[req.ServiceName]
+		if !ok {
+			// 2.4 构造错误信息
+			return errors.New("服务不存在")
+		}
+		// 待执行方法指针
+		method := reflect.ValueOf(service).MethodByName(req.MethodName)
 
-		// 3.写回响应
+		// 2.2 传入参数
+		// 第一个入参
+		ctx := context.Background()
+		// 第二个入参
+		methodReq := reflect.New(method.Type().In(1))
 
+		// 反序列化参数值
+		err = json.Unmarshal(req.Data, methodReq.Interface())
+		if err != nil {
+			//TODO: 构造错误信息
+			return errors.New("参数值解析错误")
+		}
+
+		// 2.3 执行业务逻辑
+		resp := method.Call([]reflect.Value{reflect.ValueOf(ctx), methodReq.Elem()})
+
+		// 3. 序列化响应内容, 写回响应
+		// 第一个返回值
+		methodResp := resp[0].Interface()
+		// 第二个返回值
+		//methodErr := resp[1].Interface()
+
+		// 2.1 编码resp
+		data, err := json.Marshal(methodResp)
+		if err != nil {
+			return err
+		}
+		data, err = EncodeMsg(data)
+		if err != nil {
+			return err
+		}
+
+		// 2.2 写回响应
+		_, err = conn.Write(data)
+		if err != nil {
+			return err
+		}
 	}
 }

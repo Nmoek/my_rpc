@@ -7,13 +7,17 @@ import (
 	"reflect"
 )
 
-func InitClientProxy(service Service, p Proxy) error {
+type Service interface {
+	Name() string
+}
 
-	// 获取字段值
-	val := reflect.ValueOf(service).Elem()
+func InitClientProxy(service Service, p Proxy) error {
 
 	// 获取字段类型(指针类型)
 	typ := reflect.TypeOf(service).Elem()
+
+	// 获取字段值
+	val := reflect.ValueOf(service).Elem()
 
 	// 获取字段数量
 	numField := val.NumField()
@@ -23,7 +27,7 @@ func InitClientProxy(service Service, p Proxy) error {
 		fieldType := typ.Field(i)
 		fieldValue := val.Field(i)
 
-		// 如果怎么不为可以赋值类型就跳过
+		// 如果不为可以赋值类型就跳过
 		if !fieldValue.CanSet() {
 			continue
 		}
@@ -38,37 +42,51 @@ func InitClientProxy(service Service, p Proxy) error {
 			// 在这里需要拼接调用信息:
 			// 服务名、方法名、参数值
 			// 没有严格的参数类型匹配，要小心一些
+
+			/*1. 解析+重组调用信息、入参信息*/
+			// 获取第一个参数
 			ctx, ok := args[0].Interface().(context.Context)
 			if !ok {
 				results = append(results, reflect.ValueOf(errors.New("args[0] isn't context")))
 				return
 			}
-			arg := args[1].Interface()
-
-			req := &Request{
-				ServiceName: service.Name(),
-				// 字段名称字符串
-				MethodName: fieldType.Name,
-				// 从第二个参数开始取
-				Arg: arg,
-			}
-
-			// 发送请求到服务端
-			resp, err := p.Invoke(ctx, req)
 			// 获取第一个返回值对象
 			outType := fieldType.Type.Out(0)
+			// 获取第二个参数
+			arg := args[1].Interface()
+
+			data, err := json.Marshal(arg)
 			if err != nil {
 				results = append(results, reflect.Zero(outType))
 				results = append(results, reflect.ValueOf(err))
 				return
 			}
 
+			req := &Request{
+				// 服务名
+				ServiceName: service.Name(),
+				// 调用方法名 字段名称字符串
+				MethodName: fieldType.Name,
+				// 参数值
+				Data: data,
+			}
+
+			/*2. 发送请求到服务端，并接收响应*/
+			resp, err := p.Invoke(ctx, req)
+			if err != nil {
+				results = append(results, reflect.Zero(outType))
+				results = append(results, reflect.ValueOf(err))
+				return
+			}
+
+			/*3. 解析+重组响应内容，返回真正的返回值*/
 			// 拿到第一个返回值类型 *GetByIdResp
 			first := reflect.New(outType).Interface()
 
-			// 填充返回值列表
-			err = json.Unmarshal(resp.Data, first)
 			// 需要完成resp.Data --> first
+			err = json.Unmarshal(resp.Data, first)
+
+			// 填充返回值列表
 			results = append(results, reflect.ValueOf(first).Elem())
 
 			if err != nil {
@@ -77,11 +95,6 @@ func InitClientProxy(service Service, p Proxy) error {
 				// 注意: 这里写法意思为 类型为error的nil值
 				results = append(results, reflect.Zero(reflect.TypeOf(new(error)).Elem()))
 			}
-
-			//numOut := fieldType.Type.NumOut()
-			//for j := 0; j < numOut; j++ {
-			//	results = append(results, reflect.New(fieldType.Type.Out(j)).Elem())
-			//}
 
 			// 以下为测试结果探针
 			//str, err := json.Marshal(req)
@@ -95,13 +108,10 @@ func InitClientProxy(service Service, p Proxy) error {
 			return
 		})
 
+		// 将实现好的函数替换回函数指针中
 		fieldValue.Set(fn)
 
 	}
 
 	return nil
-}
-
-type Service interface {
-	Name() string
 }

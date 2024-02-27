@@ -12,7 +12,7 @@ func TestClient_Start(t *testing.T) {
 	c, err := NewClient("tcp", ":8888")
 	assert.NoError(t, err)
 
-	us := &UserService{}
+	us := &UserServiceClient{}
 	err = InitClientProxy(us, c)
 	assert.NoError(t, err)
 

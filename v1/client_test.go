@@ -12,7 +12,7 @@ func TestInitClientProxy(t *testing.T) {
 		name string
 
 		mock    *mockProxy
-		service *UserService
+		service *UserServiceClient
 
 		wantReq     *Request
 		wantResp    *GetByIdResp
@@ -28,15 +28,13 @@ func TestInitClientProxy(t *testing.T) {
 			wantReq: &Request{
 				ServiceName: "user-service",
 				MethodName:  "GetById",
-				Arg: &GetByIdReq{
-					Id: 13,
-				},
+				Data:        []byte(`{"id": 13}`),
 			},
 
 			wantResp: &GetByIdResp{
 				Name: "Tom",
 			},
-			service: &UserService{},
+			service: &UserServiceClient{},
 		},
 		// proxy错误
 		{
@@ -44,7 +42,7 @@ func TestInitClientProxy(t *testing.T) {
 			mock: &mockProxy{
 				err: errors.New("mock err"),
 			},
-			service: &UserService{},
+			service: &UserServiceClient{},
 			wantErr: errors.New("mock err"),
 		},
 	}
@@ -70,6 +68,8 @@ func TestInitClientProxy(t *testing.T) {
 
 }
 
+// mockProxy
+// @Description: 测试用Proxy实现
 type mockProxy struct {
 	req    *Request
 	result []byte
@@ -83,7 +83,9 @@ func (m *mockProxy) Invoke(ctx context.Context, req *Request) (*Response, error)
 	}, m.err
 }
 
-type UserService struct {
+// UserServiceClient
+// @Description: 测试用Client实现
+type UserServiceClient struct {
 	GetById func(ctx context.Context, req *GetByIdReq) (*GetByIdResp, error)
 }
 
@@ -95,6 +97,6 @@ type GetByIdResp struct {
 	Name string `json:"name"`
 }
 
-func (u UserService) Name() string {
+func (u UserServiceClient) Name() string {
 	return "user-service"
 }
