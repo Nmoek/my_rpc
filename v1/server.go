@@ -2,7 +2,6 @@ package v1
 
 import (
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -51,18 +50,7 @@ func (s *Server) Start(network string, addr string) error {
 func (s *Server) handleConn(conn net.Conn) error {
 	for {
 		// 1.读取请求
-		// 1.1 先读长度
-		// 1.2 后读数据
-		lengthBytes := make([]byte, lengthByte)
-		_, err := conn.Read(lengthBytes)
-		if err != nil {
-			return err
-		}
-
-		dataLen := binary.BigEndian.Uint64(lengthBytes)
-
-		reqMsg := make([]byte, dataLen)
-		_, err = conn.Read(reqMsg)
+		reqMsg, err := ReadMsg(conn)
 		if err != nil {
 			return err
 		}
@@ -108,20 +96,7 @@ func (s *Server) handleConn(conn net.Conn) error {
 		// 第二个返回值
 		//methodErr := resp[1].Interface()
 
-		// 2.1 编码resp
-		data, err := json.Marshal(methodResp)
-		if err != nil {
-			return err
-		}
-		data, err = EncodeMsg(data)
-		if err != nil {
-			return err
-		}
+		return SendMsg(conn, methodResp)
 
-		// 2.2 写回响应
-		_, err = conn.Write(data)
-		if err != nil {
-			return err
-		}
 	}
 }
