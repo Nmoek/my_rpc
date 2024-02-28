@@ -8,7 +8,7 @@ import (
 	"net"
 )
 
-// 使用多少字节表达有效数据的长度
+// 使用8字节 64位表达有效数据的长度
 const lengthByte = 8
 
 func EncodeMsg(data []byte) ([]byte, error) {
@@ -16,13 +16,15 @@ func EncodeMsg(data []byte) ([]byte, error) {
 		return nil, errors.New("data too long")
 	}
 
-	resp := make([]byte, len(data)+lengthByte)
+	msg := make([]byte, len(data)+lengthByte)
 	l := len(data)
 
-	binary.BigEndian.PutUint64(resp, uint64(l))
-	copy(resp[lengthByte:], data)
+	// 1.放数据长度
+	binary.BigEndian.PutUint64(msg, uint64(l))
+	// 2.放实际数据
+	copy(msg[lengthByte:], data)
 
-	return resp, nil
+	return msg, nil
 }
 
 func SendMsg(conn net.Conn, msg any) error {

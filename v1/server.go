@@ -10,17 +10,19 @@ import (
 )
 
 type Server struct {
-	services map[string]Service
+	services map[string]reflectionStub
 }
 
 func NewServer() *Server {
 	return &Server{
-		services: map[string]Service{},
+		services: map[string]reflectionStub{},
 	}
 }
 
 func (s *Server) Register(service Service) {
-	s.services[service.Name()] = service
+	s.services[service.Name()] = reflectionStub{
+		value: reflect.ValueOf(service),
+	}
 }
 
 func (s *Server) Start(network string, addr string) error {
@@ -71,32 +73,35 @@ func (s *Server) handleConn(conn net.Conn) error {
 			// 2.4 构造错误信息
 			return errors.New("服务不存在")
 		}
-		// 待执行方法指针
-		method := reflect.ValueOf(service).MethodByName(req.MethodName)
 
 		// 2.2 传入参数
-		// 第一个入参
+		// context
 		ctx := context.Background()
-		// 第二个入参
-		methodReq := reflect.New(method.Type().In(1))
-
-		// 反序列化参数值
-		err = json.Unmarshal(req.Data, methodReq.Interface())
-		if err != nil {
-			//TODO: 构造错误信息
-			return errors.New("参数值解析错误")
-		}
-
-		// 2.3 执行业务逻辑
-		resp := method.Call([]reflect.Value{reflect.ValueOf(ctx), methodReq.Elem()})
+		res := service.invoke(ctx, req.MethodName, req.Data)
 
 		// 3. 序列化响应内容, 写回响应
 		// 第一个返回值
-		methodResp := resp[0].Interface()
+		methodResp := res[0].Interface()
 		// 第二个返回值
 		//methodErr := resp[1].Interface()
 
 		return SendMsg(conn, methodResp)
 
 	}
+}
+
+type reflectionStub struct {
+	value reflect.Value
+}
+
+func (r *reflectionStub) invoke(ctx context.Context, methodName string, data []byte) []reflect.Value {
+	method := r.value.MethodByName(methodName)
+	methodReq := reflect.New(method.Type().In(1))
+
+	err := json.Unmarshal(data, methodReq.Interface())
+	if err != nil {
+		return nil
+	}
+
+	return method.Call([]reflect.Value{reflect.ValueOf(ctx), methodReq.Elem()})
 }
